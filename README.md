@@ -99,11 +99,11 @@ If you're not familiar with Forth, read Leo Brodie's
 
 If you're not familiar with how Forth is implemented on x86, read the
 assembly code for Richard W.M. Jones'
-[jonesforth](http://git.annexia.org/?p=jonesforth.git;a=blob;f=jonesforth.S)
+[jonesforth](http://git.annexia.org/?p=jonesforth.git;a=blob;f=jonesforth.S).
 
 sectorforth draws a lot of inspiration from jonesforth, but the latter
 does a much better job at explaining the basics in its comments.
 
 For an excellent introduction to threaded code techniques, and to how to
 implement Forth in different architectures, read Brad Rodriguez's
-[Moving Forth](http://www.bradrodriguez.com/papers/moving1.htm)
+[Moving Forth](http://www.bradrodriguez.com/papers/moving1.htm).
