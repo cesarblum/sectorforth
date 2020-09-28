@@ -419,9 +419,11 @@ token:
         ; a line, but does not move it back to the previous line.
         ; writechar addresses that.
 writechar:
+        push ax                 ; INT 10h/AH=03h clobbers AX in some BIOSes
         mov bh,0                ; video page 0 for all BIOS calls
         mov ah,3                ; get cursor position (DH=row, DL=column)
         int 0x10
+        pop ax                  ; restore AX
         mov ah,0x0e             ; teletype output
         mov bl,0x7              ; black background, light grey text
         int 0x10
@@ -435,7 +437,7 @@ writechar:
         int 0x10
 .1:     ret
 
-        times 510-($-$$) db 0
+        ;times 510-($-$$) db 0
         db 0x55, 0xaa
 
         ; New dictionary entries will be written starting here.
