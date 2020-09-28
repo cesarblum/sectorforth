@@ -24,7 +24,7 @@
         jmp 0x0050:start
 
         ; On x86, the boot sector is loaded at 0x7c00 on boot. In segment
-        ; 0x0500, that's 0x7700 (0x0500 << 4 + 0x7700 == 0x7c00).
+        ; 0x0500, that's 0x7700 (0x0050 << 4 + 0x7700 == 0x7c00).
         org 0x7700
 
         ; Define constants for the memory map. Everything is organized
