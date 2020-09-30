@@ -437,7 +437,7 @@ writechar:
         int 0x10
 .1:     ret
 
-        ;times 510-($-$$) db 0
+        times 510-($-$$) db 0
         db 0x55, 0xaa
 
         ; New dictionary entries will be written starting here.
