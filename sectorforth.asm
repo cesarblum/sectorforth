@@ -52,33 +52,17 @@ F_IMMEDIATE     equ 0x80
 F_HIDDEN        equ 0x40
 LENMASK         equ 0x1f
 
-        ; Each dictionary entry needs a link to the previous entry.  The
-        ; initlink macro uses the nasm context stack to push a context and
-        ; define a context-local macro called %$link that represents the
-        ; end of the dictionary.
-%macro initlink 0
-%push
-%define %$link 0
-%endmacro
-
-        initlink                ; expand initlink so %$link is initialized
-
-        ; The link macro links dictionary entries by pushing a new context
-        ; and redefining %$link as a context-local label at the current
-        ; location (address) in the code. It then writes a 16-bit data
-        ; word with the value of %$link in the previous context (i.e. the
-        ; previous expansion of link), effectively writing a link field to
-        ; the previous location.
-%macro link 0
-%push
-%$link:
-        dw %$$link
-%endmacro
+        ; Each dictionary entry needs a link to the previous entry. The
+        ; last entry links to zero, marking the end of the dictionary.
+        ; As dictionary entries are defined, link will be redefined to
+        ; point to the previous entry.
+%define link 0
 
         ; defword lays out a dictionary entry where it is expanded.
 %macro defword 3-4 0            ; name, length, label, flags
 word_%3:
-        link                    ; link to previous word
+        dw link                 ; link to previous word
+%define link word_%3
         db %4+%2                ; flags+length
         db %1                   ; name
 %3:                             ; code starts here
