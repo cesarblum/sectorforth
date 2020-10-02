@@ -59,13 +59,14 @@ LENMASK         equ 0x1f
 %define link 0
 
         ; defword lays out a dictionary entry where it is expanded.
-%macro defword 3-4 0            ; name, length, label, flags
-word_%3:
+%macro defword 2-3 0            ; name, label, flags
+word_%2:
         dw link                 ; link to previous word
-%define link word_%3
-        db %4+%2                ; flags+length
+%define link word_%2
+%strlen %%len %1
+        db %3+%%len             ; flags+length
         db %1                   ; name
-%3:                             ; code starts here
+%2:                             ; code starts here
 %endmacro
 
         ; NEXT advances execution to the next word. The actual code is
@@ -85,25 +86,25 @@ word_%3:
         ; nand ( x1 x2 -- n )   NAND the two values at the top of the stack
         ; exit ( r:addr -- )    Resume execution at address at the top of
         ;                       the return stack
-        defword "@",1,FETCH
+        defword "@",FETCH
         pop bx
         push word [bx]
         NEXT
 
-        defword "!",1,STORE
+        defword "!",STORE
         pop bx
         pop word [bx]
         NEXT
 
-        defword "sp@",3,SPFETCH
+        defword "sp@",SPFETCH
         push sp
         NEXT
 
-        defword "rp@",3,RPFETCH
+        defword "rp@",RPFETCH
         push bp
         NEXT
 
-        defword "0=",2,ZEROEQUALS
+        defword "0=",ZEROEQUALS
         pop ax
         test ax,ax
         setnz al                ; AL=0 if ZF=1, else AL=1
@@ -112,14 +113,14 @@ word_%3:
         push ax
         NEXT
 
-        defword "+",1,PLUS
+        defword "+",PLUS
         pop bx
         pop ax
         add ax,bx
         push ax
         NEXT
 
-        defword "nand",4,NAND
+        defword "nand",NAND
         pop bx
         pop ax
         and ax,bx
@@ -127,7 +128,7 @@ word_%3:
         push ax
         NEXT
 
-        defword "exit",4,EXIT
+        defword "exit",EXIT
         xchg sp,bp              ; swap SP and BP, SP controls return stack
         pop si                  ; pop address to next word
         xchg sp,bp              ; restore SP and BP
@@ -139,15 +140,15 @@ word_%3:
         ; TIB could be left out. But it is exposed so that sectorforth
         ; code that accesses the parse area can be written in an idiomatic
         ; fashion (e.g. TIB >IN @ +).
-        defword "tib",3,TIBVAR
+        defword "tib",TIBVAR
         push word TIB
         NEXT
 
-        defword "state",5,STATEVAR
+        defword "state",STATEVAR
         push word STATE
         NEXT
 
-        defword ">in",3,TOINVAR
+        defword ">in",TOINVAR
         push word TOIN
         NEXT
 
@@ -158,12 +159,12 @@ next:
         jmp ax                  ; jump directly to it
 
         ; Words and data space for the HERE and LATEST variables.
-        defword "here",4,HEREVAR
+        defword "here",HEREVAR
         push word HERE
         NEXT
 HERE:   dw start_HERE
 
-        defword "latest",6,LATESTVAR
+        defword "latest",LATESTVAR
         push word LATEST
         NEXT
 LATEST: dw word_SEMICOLON       ; initialized to last word in dictionary
@@ -173,7 +174,7 @@ LATEST: dw word_SEMICOLON       ; initialized to last word in dictionary
         ;
         ; KEY waits for a key press and pushes its scan code (AH) and
         ; ASCII character (AL) to the stack, both in a single cell.
-        defword "key",3,KEY
+        defword "key",KEY
         mov ah,0
         int 0x16
         push ax
@@ -181,7 +182,7 @@ LATEST: dw word_SEMICOLON       ; initialized to last word in dictionary
 
         ; EMIT writes to the screen the ASCII character corresponding to
         ; the lowest 8 bits of the value at the top of the stack.
-        defword "emit",4,EMIT
+        defword "emit",EMIT
         pop ax
         call writechar
         NEXT
@@ -190,7 +191,7 @@ LATEST: dw word_SEMICOLON       ; initialized to last word in dictionary
         ; creates a dictionary entry for it, writes machine code to jump
         ; to DOCOL, updates LATEST and HERE, and switches to compilation
         ; state.
-        defword ":",1,COLON
+        defword ":",COLON
         call token              ; parse word from input
         push si
         mov si,di               ; set parsed word as string copy source
@@ -240,7 +241,7 @@ DOCOL:
         ; of EXIT to the end of a new word definition, makes the word
         ; visible in the dictionary, and switches back to interpretation
         ; state.
-        defword ";",1,SEMICOLON,F_IMMEDIATE
+        defword ";",SEMICOLON,F_IMMEDIATE
         mov bx,[LATEST]
         and byte [bx+2],~F_HIDDEN       ; reveal new word
         mov byte [STATE],0      ; switch to interpretation state
