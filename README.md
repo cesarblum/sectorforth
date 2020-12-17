@@ -36,7 +36,7 @@ write a more powerful interpreter that can parse numbers.
 | `+`       | ( x y -- z )  | Sum the two numbers at the top of the stack   |
 | `nand`    | ( x y -- z )  | NAND the two numbers at the top of the stack  |
 | `exit`    | ( r:addr -- ) | Pop return stack and resume execution at addr |
-| `key`     | ( -- x )      | Read key stroke as ASCII character)           |
+| `key`     | ( -- x )      | Read key stroke as ASCII character            |
 | `emit`    | ( x -- )      | Print low byte of x as an ASCII character     |
 
 ### Variables
