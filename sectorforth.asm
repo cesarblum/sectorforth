@@ -13,10 +13,7 @@
         ; The SP register is used as the data stack pointer, and the BP
         ; register acts as the return stack pointer.
         ;
-        ; The minimum CPU required to run sectorforth is the 386, to use
-        ; the SETNZ instruction.
         bits 16
-        cpu 386
 
         ; Set CS to a known value by performing a far jump. Memory up to
         ; 0x0500 is used by the BIOS. Setting the segment to 0x0500 gives
@@ -36,7 +33,7 @@ TIB             equ 0x0000      ; terminal input buffer (TIB)
 STATE           equ 0x1000      ; current state (0=interpret, 1=compile)
 TOIN            equ 0x1002      ; current read offset into TIB (>IN)
 RP0             equ 0x76fe      ; bottom of return stack
-SP0             equ 0xfffe      ; bottom of data stack
+SP0             equ TIB         ; bottom of data stack
 
         ; Each dictionary entry is laid out in memory as such:
         ;
@@ -106,10 +103,8 @@ word_%2:
 
         defword "0=",ZEROEQUALS
         pop ax
-        test ax,ax
-        setnz al                ; AL=0 if ZF=1, else AL=1
-        dec ax                  ; AL=ff if AL=0, else AL=0
-        cbw                     ; AH=AL
+        cmp ax,1                ; C=1 if AX=0
+        sbb ax,ax               ; AX-AX-C, 0->FFFF, else 0
         push ax
         NEXT
 
@@ -195,9 +190,12 @@ LATEST: dw word_SEMICOLON       ; initialized to last word in dictionary
         call token              ; parse word from input
         push si
         mov si,di               ; set parsed word as string copy source
-        mov di,[HERE]           ; set current value of HERE as destination
-        mov ax,[LATEST]         ; get pointer to latest defined word
-        mov [LATEST],di         ; update LATEST to new word being defined
+        mov bx,HERE
+        mov di,[bx]             ; set current value of HERE as destination
+        mov ax,di
+        xchg [bx+LATEST-HERE],ax
+                                ; get pointer to latest defined word, and
+                                ; update LATEST to new word being defined
         stosw                   ; link pointer
         mov al,cl
         or al,F_HIDDEN          ; hide new word while it's being defined
@@ -207,7 +205,7 @@ LATEST: dw word_SEMICOLON       ; initialized to last word in dictionary
         stosw                   ; compile near jump, absolute indirect...
         mov ax,DOCOL.addr
         stosw                   ; ...to DOCOL
-        mov [HERE],di           ; update HERE to next free position
+        mov [bx],di             ; update HERE to next free position
         mov byte [STATE],1      ; switch to compilation state
         pop si
         NEXT
@@ -219,7 +217,7 @@ LATEST: dw word_SEMICOLON       ; initialized to last word in dictionary
         ; pointer), and point it to the sequence of addresses that makes
         ; up a word's body.
         ;
-        ; DOCOL advances AX 4 bytes, and then moves that value to SI. When
+        ; DOCOL moves AX to SI, and then advances SI by 4 bytes. When
         ; DOCOL is jumped to, AX points to the code field of the word
         ; about to be executed. The 4 bytes being skipped are the actual
         ; jump instruction to DOCOL itself, inserted by the colon compiler
@@ -228,8 +226,9 @@ DOCOL:
         xchg sp,bp              ; swap SP and BP, SP controls return stack
         push si                 ; push current "instruction pointer"
         xchg sp,bp              ; restore SP and BP
-        add ax,4                ; skip word's code field
-        mov si,ax               ; point "instruction pointer" to word body
+        xchg si,ax              ; point "instruction pointer" to word body
+        lodsw
+        lodsw                   ; skip word's code field
         NEXT                    ; start executing the word
 
         ; The jump instruction inserted by the compiler is an indirect
@@ -252,6 +251,14 @@ compile:
         mov [HERE],di           ; advance HERE to next cell
         NEXT
 
+        ; Display a red '!!' to let the user know an error happened and the
+        ; interpreter is being reset
+error:
+        mov ax,0x0921           ; write '!'
+        mov bl,0x04             ; black background (BH=0 already), red text
+        mov cl,2                ; twice (CH should be 0 already)
+        int 0x10
+
         ; Execution starts here.
 start:
         cld                     ; clear direction flag
@@ -264,26 +271,15 @@ start:
         pop es
         pop ss
 
-        ; Skip error signaling on initialization
-        jmp init
-
-        ; Display a red '!!' to let the user know an error happened and the
-        ; interpreter is being reset
-error:
-        mov ax,0x0921           ; write '!'
-        mov bx,0x0004           ; black background, red text
-        mov cx,2                ; twice
-        int 0x10
-
         ; Initialize stack pointers, state, and terminal input buffer.
 init:
+        xor sp,sp               ; mov sp,SP0 / data stack pointer
         mov bp,RP0              ; BP is the return stack pointer
-        mov sp,SP0              ; SP is the data stack pointer
 
         ; Fill TIB with zeros, and set STATE and >IN to 0
         mov al,0
         mov cx,STATE+4
-        mov di,TIB
+        xor di,di               ; mov di,TIB
         rep stosb
 
         ; Enter the interpreter loop.
@@ -298,28 +294,23 @@ init:
         ; input buffer, and the interpreter goes into interpretation mode.
 interpreter:
         call token              ; parse word from input
-        mov bx,[LATEST]         ; start searching for it in the dictionary
-.1:     test bx,bx              ; zero?
+        mov bx,LATEST           ; start searching for it in the dictionary
+.1:     mov bx,[bx]
+        test bx,bx              ; zero?
         jz error                ; not found, reset interpreter state
-        mov si,bx
-        lodsw                   ; skip link
+        lea si,[bx+2]           ; skip link
         lodsb                   ; read flags+length
-        mov dl,al               ; save those for later use
         test al,F_HIDDEN        ; entry hidden?
-        jnz .2                  ; if so, skip it
-        and al,LENMASK          ; mask out flags
+        jnz .1                  ; if so, skip it
+        mov dl,al               ; save those for later use
+        and ax,LENMASK          ; mask out flags
         cmp al,cl               ; same length?
-        jne .2                  ; if not, skip entry
-        push cx
+        jne .1                  ; if not, skip entry
         push di
         repe cmpsb              ; compare strings
         pop di
-        pop cx
-        je .3                   ; if equal, search is over
-.2:     mov bx,[bx]             ; skip to next entry
-        jmp .1                  ; try again
-.3:     mov ax,si               ; after comparison, SI points to code field
-        mov si,.loop            ; set SI so NEXT loops back to interpreter
+        xchg cx,ax              ; restore length
+        jne .1                  ; try again
         ; Decide whether to interpret or compile the word. The IMMEDIATE
         ; flag is located in the most significant bit of the flags+length
         ; byte. STATE can only be 0 or 1. When ORing those two, these are
@@ -337,6 +328,10 @@ interpreter:
         and dl,F_IMMEDIATE      ; isolate IMMEDIATE flag
         or dl,[STATE]           ; OR with state
         dec dl                  ; decrement
+        xchg si,ax              ; after comparison, SI points to code field
+                                ; move it into AX
+        mov si,.loop            ; set SI so NEXT loops back to interpreter
+                                ; Z flag is unaffected by XCHG and MOV
         jz compile              ; if result is zero, compile
         jmp ax                  ; otherwise, interpret (execute) the word
 .loop:  dw interpreter
@@ -372,7 +367,7 @@ token:
         call writechar          ; CR
         mov al,10
         call writechar          ; LF
-        mov di,TIB              ; read into TIB
+        xor di,di               ; mov di,TIB / read into TIB
 .1:     mov ah,0                ; wait until a key is pressed
         int 0x16
         cmp al,13               ; return pressed?
@@ -382,7 +377,7 @@ token:
         call writechar          ; otherwise, write character to screen
         stosb                   ; store character in TIB
         jmp .1                  ; keep reading
-.2:     cmp di,TIB              ; start of TIB?
+.2:     test di,di              ; cmp di,TIB / start of TIB?
         je .1                   ; if so, there's nothing to erase
         dec di                  ; erase character in TIB
         call writechar          ; move cursor back one character
