@@ -1,109 +1,125 @@
-# sectorforth
+# sectorforth XT
 
-sectorforth is a 16-bit x86 Forth that fits in a 512-byte boot sector.
+[Sectorforth](https://github.com/cesarblum/sectorforth) is not a useful
+version of the programming language Forth, nor does it claim to be. It is
+instead a demonstration of the language's philosophy: a simple set of
+primitives which fit into the first sector of floppy disk
+can be combined to build up a complete language.
 
-Inspiration to write sectorforth came from a 1996
-[Usenet thread](https://groups.google.com/g/comp.lang.forth/c/NS2icrCj1jQ)
-(in particular, Bernd Paysan's first post on the thread).
+Compared to similar projects like
+[bootBASIC](https://github.com/nanochess/bootBASIC) or
+[sectorlisp](https://github.com/jart/sectorlisp), sectorforth requires an
+Intel i386 processor or later to run. There are good reasons for this.
+There are several features of the original 8086 architecture that expand the
+size of a program running on it.
 
-## Batteries not included
+## What the 386 does differently
 
-sectorforth contains only the eight primitives outlined in the Usenet
-post above, five variables for manipulating internal state, and two I/O
-primitives.
+### Pushing immediate values
 
-With that minimal set of building blocks, words for branching, compiling,
-manipulating the return stack, etc. can all be written in Forth itself
-(check out the examples!).
-
-The colon compiler (`:`) is available, so new words can be defined easily
-(that means `;` is also there, of course).
-
-Contrary to many Forth implementations, sectorforth does not attempt to
-convert unknown words to numbers, since numbers can be produced using the
-available primitives. The two included I/O primitives are sufficient to
-write a more powerful interpreter that can parse numbers.
-
-### Primitives
-
-| Primitive | Stack effects | Description                                   |
-| --------- | ------------- | --------------------------------------------- |
-| `@`       | ( addr -- x ) | Fetch memory contents at addr                 |
-| `!`       | ( x addr -- ) | Store x at addr                               |
-| `sp@`     | ( -- sp )     | Get pointer to top of data stack              |
-| `rp@`     | ( -- rp )     | Get pointer to top of return stack            |
-| `0=`      | ( x -- flag ) | -1 if top of stack is 0, 0 otherwise          |
-| `+`       | ( x y -- z )  | Sum the two numbers at the top of the stack   |
-| `nand`    | ( x y -- z )  | NAND the two numbers at the top of the stack  |
-| `exit`    | ( r:addr -- ) | Pop return stack and resume execution at addr |
-| `key`     | ( -- x )      | Read key stroke as ASCII character            |
-| `emit`    | ( x -- )      | Print low byte of x as an ASCII character     |
-
-### Variables
-
-| Variable | Description                                                   |
-| -------- | ------------------------------------------------------------- |
-| `state`  | 0: execute words; 1: compile word addresses to the dictionary |
-| `tib`    | Terminal input buffer, where input is parsed from             |
-| `>in`    | Current parsing offset into terminal input buffer             |
-| `here`   | Pointer to next free position in the dictionary               |
-| `latest` | Pointer to most recent dictionary entry                       |
-
-## Compiling
-
-sectorforth was developed using NASM 2.15.01. Earlier versions of NASM
-are probably capable of compiling it, but that hasn't been tested.
-
-To compile sectorforth, just run `make`:
+Placing immediate values onto the stack is allowed on the 386.
 
 ```
-$ make
+push 12345
 ```
 
-That will produce a compiled binary (`sectorforth.bin`) and a floppy disk
-image (`sectorforth.img`) containing the binary in its boot sector.
+On the 8086, only registers can be pushed.
 
-## Running
+````
+mov ax, 12345
+push ax
+````
 
-The makefile contains two targets for running sectorforth in QEMU:
+Surprisingly, this is only a byte larger than the original version.
+Sectorforth pushes immediates in five different places, so this does have
+overhead.
 
-- `debug` starts QEMU in debug mode, with execution paused. That allows
-you to set up a remote target in GDB (`target remote localhost:1234`) and
-set any breakpoints you want before sectorforth starts running.
-- `run` simply runs sectorforth in QEMU.
+### SETNZ
 
-## Usage
+To test if a given number is zero in the word ``0=``, sectorforth uses this
+easy to understand routine. Keep in mind that -1 or 0xFFFF is what Forth
+uses as the truth value:
 
-Up to 4KB of input can be entered per line. After pressing return, the
-interpreter parses one word at a time an interprets it (i.e. executes it
-or compiles it, according to the current value of the `state` variable).
+```
+test ax,ax
+setnz al ; AL=0 if ZF=1, else AL=1
+dec ax   ; AL=ff if AL=0, else AL=0
+cbw      ; AH=AL
+```
 
-sectorforth does not print the ` ok` prompt familiar to Forth users.
-However, if a word is not found in the dictionary, the error message `!!`
-is printed in red, letting you know an error happened.
+The SETNZ instruction introduced with the 386 is an example of what a
+CISC architecture design does best: provide instructions to make
+common situations easier. A naive replacement for this instruction could be
+longer.
 
-When a word is not found in the dictionary, the interpreter's state is
-reset: the data and return stacks, as well as the terminal input buffer
-are cleared, and the interpreter is placed in interpretation mode. Other
-errors (e.g. compiling an invalid address in a word definition and
-attempting to execute it) are not handled gracefully, and will crash the
-interpreter.
+## Solutions
 
-## Code structure
+There are several things that can be done to reduce the size of the program.
+Some can be used generally in 8086 programming, while others are specific to
+this program.
 
-Comments throughout the code assume familiarity with Forth and how it is
-commonly implemented.
+###Removal of constants
 
-If you're not familiar with Forth, read Leo Brodie's
-[Starting Forth](https://www.forth.com/starting-forth).
+The constant TIB is used several places in the code. This is always 0, and
+will never be changed. This allows for several well-known techniques to be
+used:
 
-If you're not familiar with how Forth is implemented on x86, read the
-assembly code for Richard W.M. Jones'
-[jonesforth](http://git.annexia.org/?p=jonesforth.git;a=blob;f=jonesforth.S).
+```
+; Old version:
+mov ax, word TIB
+push ax
+; New:
+xor ax, ax
+push ax
+```
 
-sectorforth draws a lot of inspiration from jonesforth, but the latter
-does a much better job at explaining the basics in its comments.
+A number exclusive-ORed by itself will always be zero. This is a common
+x86 idiom that saves a single byte.
 
-For an excellent introduction to threaded code techniques, and to how to
-implement Forth in different architectures, read Brad Rodriguez's
-[Moving Forth](http://www.bradrodriguez.com/papers/moving1.htm).
+```
+; Old version:
+cmp di,TIB ; start of TIB?
+je .1      ; if so, there's nothing to erase
+; New version:
+test di,di ; is di 0, the start of TIB?
+jz .1      ; if so, there's nothing to erase
+```
+```
+
+The TEST instruction ANDs the two operands together. Since they are identical
+here, this sets the zero flag, allowing the jump to occur as normal. This saves
+another byte.
+
+These changes occur in a few other places throughout the code, reducing
+much of the overhead the altered stack instructions added.
+
+### Improved 0=
+
+While the routine used above for ``0=`` was easy to follow, A Github user
+who has since deleted their account proposed a different version
+[here](https://github.com/cesarblum/sectorforth/issues/3):
+
+```
+cmp ax, 1
+sbb ax, ax
+```
+
+It compares the value to one, and then subtracts the value by itself.
+Understanding why this works requires an understanding of how comparisons
+work on the 8086. A compare is just a subtraction that doesn't save its
+results. If AX is 0 and it is subtracted by 1, it will end up being -1.
+This activates the carry flag. SBB (Subtract with borrow) will decrement
+the result of its subtraction of the carry flag is active. This sets
+AX to -1 if it is 0, and *only* if it is zero. This saves two bytes, while
+not requiring the 386!.
+
+### End result
+
+With these optimizations, the binary comes out to the same size as the
+original while being able to run on the original PC hardware.
+
+## Using sectorforth XT
+
+Use the build instructions found in the original sectorforth README, then
+load in the PC emulator of your choice. I prefer
+[86Box](https://github.com/86Box/86Box).

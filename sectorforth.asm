@@ -12,11 +12,9 @@
         ;
         ; The SP register is used as the data stack pointer, and the BP
         ; register acts as the return stack pointer.
-        ;
-        ; The minimum CPU required to run sectorforth is the 386, to use
-        ; the SETNZ instruction.
+
         bits 16
-        cpu 386
+        cpu 8086
 
         ; Set CS to a known value by performing a far jump. Memory up to
         ; 0x0500 is used by the BIOS. Setting the segment to 0x0500 gives
@@ -32,7 +30,6 @@
         ; simplify input parsing (the Forth variable >IN ends up being
         ; also a pointer into TIB, so there's no need to add >IN to TIB
         ; to get a pointer to the parse area). TIB is 4 KB long.
-TIB             equ 0x0000      ; terminal input buffer (TIB)
 STATE           equ 0x1000      ; current state (0=interpret, 1=compile)
 TOIN            equ 0x1002      ; current read offset into TIB (>IN)
 RP0             equ 0x76fe      ; bottom of return stack
@@ -104,12 +101,12 @@ word_%2:
         push bp
         NEXT
 
+        ;0= version suggested by github user 'ghost':
+        ;https://github.com/cesarblum/sectorforth/issues/3
         defword "0=",ZEROEQUALS
         pop ax
-        test ax,ax
-        setnz al                ; AL=0 if ZF=1, else AL=1
-        dec ax                  ; AL=ff if AL=0, else AL=0
-        cbw                     ; AH=AL
+        cmp ax, 1
+        sbb ax, ax
         push ax
         NEXT
 
@@ -140,16 +137,20 @@ word_%2:
         ; TIB could be left out. But it is exposed so that sectorforth
         ; code that accesses the parse area can be written in an idiomatic
         ; fashion (e.g. TIB >IN @ +).
+
         defword "tib",TIBVAR
-        push word TIB
+        xor ax, ax
+        push ax
         NEXT
 
         defword "state",STATEVAR
-        push word STATE
+        mov ax, STATE
+        push ax
         NEXT
 
         defword ">in",TOINVAR
-        push word TOIN
+        mov ax, word TOIN
+        push ax
         NEXT
 
         ; Strategically define next here so most jumps to it are short,
@@ -160,12 +161,14 @@ next:
 
         ; Words and data space for the HERE and LATEST variables.
         defword "here",HEREVAR
-        push word HERE
+        mov ax, word HERE
+        push ax
         NEXT
 HERE:   dw start_HERE
 
         defword "latest",LATESTVAR
-        push word LATEST
+        mov ax, word LATEST
+        push ax
         NEXT
 LATEST: dw word_SEMICOLON       ; initialized to last word in dictionary
 
@@ -283,7 +286,7 @@ init:
         ; Fill TIB with zeros, and set STATE and >IN to 0
         mov al,0
         mov cx,STATE+4
-        mov di,TIB
+        xor di, di ;TIB
         rep stosb
 
         ; Enter the interpreter loop.
@@ -372,7 +375,7 @@ token:
         call writechar          ; CR
         mov al,10
         call writechar          ; LF
-        mov di,TIB              ; read into TIB
+        xor di, di              ; read into TIB (0)
 .1:     mov ah,0                ; wait until a key is pressed
         int 0x16
         cmp al,13               ; return pressed?
@@ -382,8 +385,8 @@ token:
         call writechar          ; otherwise, write character to screen
         stosb                   ; store character in TIB
         jmp .1                  ; keep reading
-.2:     cmp di,TIB              ; start of TIB?
-        je .1                   ; if so, there's nothing to erase
+.2:     test di,di              ; is di 0, the start of TIB?
+        jz .1                   ; if so, there's nothing to erase
         dec di                  ; erase character in TIB
         call writechar          ; move cursor back one character
         mov ax,0x0a20           ; erase without moving cursor
