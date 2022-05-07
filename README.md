@@ -58,7 +58,7 @@ There are several things that can be done to reduce the size of the program.
 Some can be used generally in 8086 programming, while others are specific to
 this program.
 
-###Removal of constants
+### Removal of constants
 
 The constant TIB is used several places in the code. This is always 0, and
 will never be changed. This allows for several well-known techniques to be
@@ -83,7 +83,6 @@ je .1      ; if so, there's nothing to erase
 ; New version:
 test di,di ; is di 0, the start of TIB?
 jz .1      ; if so, there's nothing to erase
-```
 ```
 
 The TEST instruction ANDs the two operands together. Since they are identical
@@ -123,3 +122,7 @@ original while being able to run on the original PC hardware.
 Use the build instructions found in the original sectorforth README, then
 load in the PC emulator of your choice. I prefer
 [86Box](https://github.com/86Box/86Box).
+
+![A virtualized IBM PC-XT running sectorforth XT on a monochrome screen.](https://user-images.githubusercontent.com/56777828/167271964-a7e28b4c-3a2e-42a4-87ea-9bc455dae2c1.png)
+
+*A virtualized IBM PC-XT running sectorforth XT.*
